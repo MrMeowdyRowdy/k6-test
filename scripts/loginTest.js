@@ -50,7 +50,7 @@ export default function () {
   sleep(0.1);
 }
 
-// ✅ Automatically generate HTML report when the test finishes
+// Automatically generate HTML report when the test finishes
 export function handleSummary(data) {
   return {
     'results/summary.html': htmlReport(data),
