@@ -1,0 +1,6 @@
+results/
+.idea/
+*.iml
+out/
+.vscode/
+.DS_Store

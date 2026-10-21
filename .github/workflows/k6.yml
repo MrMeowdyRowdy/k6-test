@@ -1,0 +1,59 @@
+name: k6
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      # smoke only: fakestoreapi.com is a free public API, so CI never runs the heavier profiles
+      - name: Run smoke profile
+        run: k6 run --summary-export results/summary.json scripts/store-journey.js
+        env:
+          PROFILE: smoke
+          K6_WEB_DASHBOARD: 'true'
+          K6_WEB_DASHBOARD_PERIOD: 1s # a 10 s run is too short for the default period
+          K6_WEB_DASHBOARD_EXPORT: results/report.html
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-results
+          path: results
+
+  deploy:
+    needs: smoke
+    # publish the report even when thresholds fail, on the default branch only
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: k6-results
+          path: site
+      - name: Serve the report as the Pages index
+        run: mv site/report.html site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
