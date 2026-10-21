@@ -17,7 +17,7 @@ jobs:
       - uses: grafana/setup-k6-action@v1
       # smoke only: fakestoreapi.com is a free public API, so CI never runs the heavier profiles
       - name: Run smoke profile
-        run: k6 run --summary-export results/summary.json scripts/store-journey.js
+        run: mkdir -p results && k6 run --summary-export results/summary.json scripts/store-journey.js # results/ is gitignored, k6 does not create it
         env:
           PROFILE: smoke
           K6_WEB_DASHBOARD: 'true'
@@ -29,6 +29,7 @@ jobs:
         with:
           name: k6-results
           path: results
+          if-no-files-found: error
 
   deploy:
     needs: smoke

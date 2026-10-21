@@ -51,6 +51,7 @@ results/                     # generated, not committed
 Prerequisite: [k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) (tested with v2.3.0). From the repository root:
 
 ```bash
+mkdir -p results
 export K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_PERIOD=1s K6_WEB_DASHBOARD_EXPORT=results/report.html
 k6 run --summary-export results/summary.json scripts/store-journey.js                 # smoke
 PROFILE=load k6 run --summary-export results/summary.json scripts/store-journey.js    # load
