@@ -22,7 +22,7 @@ const loginDuration = new Trend('login_duration', true);
 const loginFailed = new Rate('login_failed');
 const productsViewed = new Counter('products_viewed');
 
-// smoke may hit any target; load targets fakestoreapi once; stress and spike are for a target you own.
+// fakestoreapi.com is a free service: smoke anywhere, load only occasionally, stress and spike only against a target you own.
 const profiles = {
   smoke: {
     smoke: { executor: 'constant-vus', vus: 1, duration: '10s' },
@@ -30,7 +30,7 @@ const profiles = {
   load: {
     load: {
       executor: 'constant-arrival-rate',
-      // 5 journeys/s x 4 requests = 20 req/s, the original 20 TPS target
+      // 5 journeys/s x 4 requests = 20 req/s; the free API timed out at 20 journeys/s (see docs/findings.md)
       rate: Number(__ENV.RATE || 5), timeUnit: '1s', duration: '1m',
       preAllocatedVUs: 20, maxVUs: 60,
     },
@@ -55,10 +55,10 @@ const profiles = {
       preAllocatedVUs: 50, maxVUs: 400,
       stages: [
         { target: 5, duration: '15s' },
-        { target: 150, duration: '5s' }, // sudden jump
+        { target: 150, duration: '5s' },
         { target: 150, duration: '20s' },
-        { target: 5, duration: '5s' },   // sudden drop
-        { target: 5, duration: '15s' },  // recovery
+        { target: 5, duration: '5s' },
+        { target: 5, duration: '15s' }, // recovery: does latency return to baseline?
       ],
     },
   },
@@ -82,7 +82,7 @@ export const options = {
     http_req_failed: ['rate<0.03'],
     checks: ['rate>0.97'],
     login_failed: ['rate<0.03'],
-    // smoke judges correctness only: a 4-iteration p95 on a third-party API is noise, not an SLO
+    // smoke judges correctness only: a p95 over ~6 iterations of a third-party API is noise, not an SLO
     ...(PROFILE === 'smoke' ? {} : latencyThresholds),
   },
 };
@@ -137,15 +137,20 @@ export default function () {
         return p.id === pick.id && typeof p.title === 'string' && typeof p.price === 'number';
       },
     });
-    productsViewed.add(1);
+    if (res.status === 200) productsViewed.add(1);
   });
   sleep(0.3);
 
   group('cart', () => {
-    const res = http.get(`${BASE}/carts/user/${userIdFromToken(token)}`);
+    const userId = userIdFromToken(token);
+    const res = http.get(`${BASE}/carts/user/${userId}`);
     check(res, {
       'cart status is 200': (r) => r.status === 200,
-      'carts are an array': (r) => Array.isArray(r.json()),
+      // [] passes: some demo users (derek) have no carts
+      'carts belong to the user': (r) => {
+        const carts = r.json();
+        return Array.isArray(carts) && carts.every((c) => c.userId === userId);
+      },
     });
   });
 }

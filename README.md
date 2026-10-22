@@ -14,9 +14,9 @@ One iteration is one shopper, each step in its own `group` so latency is reporte
 | `login` | `POST /auth/login` with a random user from `data/users.csv` | status 201, token in body |
 | `products` | `GET /products` | status 200, non-empty array |
 | `product_detail` | `GET /products/{id}` for a random product | status 200, `id` matches, `title` string, `price` number |
-| `cart` | `GET /carts/user/{id}`, id read from the token's `sub` | status 200, array |
+| `cart` | `GET /carts/user/{id}`, id read from the token's `sub` | status 200, every cart's `userId` matches |
 
-If login fails the iteration stops. Think time between steps is 0.2 to 0.3 s.
+If login fails or the product list comes back empty, the iteration stops. Think time between steps is 0.2 to 0.3 s.
 
 Profiles, picked with `PROFILE` (default `smoke`):
 
@@ -24,16 +24,16 @@ Profiles, picked with `PROFILE` (default `smoke`):
 |---|---|---|---|---|
 | `smoke` | `constant-vus` | 1 VU | 10 s | anywhere, including CI |
 | `load` | `constant-arrival-rate` | 5 journeys/s = 20 req/s (`RATE` overrides), 20 VUs pre-allocated, max 60 | 1 min | fakestoreapi.com once in a while |
-| `stress` | `ramping-arrival-rate` | 10, then 20, 40, 80, 120 iterations/s | 80 s | a target you own |
-| `spike` | `ramping-arrival-rate` | 5, jump to 150 in 5 s, hold 20 s, drop to 5 | 60 s | a target you own |
+| `stress` | `ramping-arrival-rate` | ramps 10 → 20 → 40 → 80 → 120 iterations/s, 20 s per stage | 80 s | a target you own |
+| `spike` | `ramping-arrival-rate` | 5 for 15 s, jump to 150 in 5 s, hold 20 s, drop to 5, recover 15 s | 60 s | a target you own |
 
 fakestoreapi.com is a free public API. CI and everyday runs use smoke only. `stress` and `spike` were never run against it; they were only checked with `k6 inspect` and are meant for a service you control.
 
 ## Design choices
 
-- **Arrival rate, not VUs.** With a VU model the request rate falls when the server slows down, which hides the problem. Arrival-rate executors start iterations at a fixed rate whatever the latency, so a slow server shows up as latency, `dropped_iterations` and timeouts. This is also what delivers the "20 TPS" the first version only promised: each journey makes 4 requests, so the default 5 journeys/s is 20 req/s.
-- **Thresholds in the script**, so a miss gives a non-zero exit code: `http_req_failed` < 3 %, `checks` > 97 %, `login_failed` < 3 %, p95 < 1.5 s for login, product detail and cart, p95 < 2.5 s for `products` (full catalogue payload). Per-group limits use tags, for example `http_req_duration{group:::login}`. None aborts a run early; they judge at the end. The latency limits apply to `load`, `stress` and `spike` only: `smoke` (the CI run) judges correctness (failures, checks, login), because a p95 over four iterations of a free third-party API is noise and would turn the badge red for reasons outside this repo.
-- **Custom metrics**: `login_duration` (Trend), `login_failed` (Rate), `products_viewed` (Counter).
+- **Arrival rate, not VUs.** With a VU model the request rate falls when the server slows down, which hides the problem. Arrival-rate executors start iterations at a fixed rate whatever the latency, so a slow server shows up as latency, `dropped_iterations` and timeouts. It also fixes the offered load: each journey makes 4 requests, so the default 5 journeys/s is 20 req/s, the original 20 TPS target.
+- **Thresholds in the script**, so a miss gives a non-zero exit code: `http_req_failed` < 3 %, `checks` > 97 %, `login_failed` < 3 %, p95 < 1.5 s for login, product detail and cart, p95 < 2.5 s for `products` (full catalogue payload). Per-group limits use tags, for example `http_req_duration{group:::login}`. None aborts a run early; they judge at the end. The latency limits apply to `load`, `stress` and `spike` only: `smoke` (the CI run) judges correctness (failures, checks, login), because a p95 over about six iterations of a free third-party API is noise and would turn the badge red for reasons outside this repo.
+- **Custom metrics**: `login_duration` (Trend), `login_failed` (Rate), `products_viewed` (Counter, successful detail views).
 - **No remote imports.** The old version imported `k6-reporter` from the unpinned `main` branch of a GitHub repo, which is a supply-chain risk. Reports now come from k6's built-in web dashboard export, with `--summary-export` for the JSON.
 - **Credentials in a CSV** read once through `SharedArray`; the file holds the public demo users of the API.
 - **CI is smoke-only** to stay polite to a free service and to keep the pipeline stable.
