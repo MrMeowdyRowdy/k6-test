@@ -93,7 +93,7 @@ const json = { headers: { 'Content-Type': 'application/json' } };
 function userIdFromToken(token) {
   try {
     return JSON.parse(encoding.b64decode(token.split('.')[1], 'rawurl', 's')).sub;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
